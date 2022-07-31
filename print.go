@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	. "github.com/antonmedv/fx/pkg/dict"
-	. "github.com/antonmedv/fx/pkg/json"
+	fxDict "github.com/antonmedv/fx/pkg/dict"
+	fxJson "github.com/antonmedv/fx/pkg/json"
 	"github.com/antonmedv/fx/pkg/theme"
 )
 
@@ -29,19 +29,19 @@ func (m *model) print(v interface{}, level, lineNumber, keyEndPos int, path stri
 		searchValue = highlight.value
 	}
 
-	switch v.(type) {
+	switch v := v.(type) {
 	case nil:
 		return []string{merge(m.explode("null", searchValue, m.theme.Null, path, selectableValues))}
 
 	case bool:
-		if v.(bool) {
+		if v {
 			return []string{merge(m.explode("true", searchValue, m.theme.Boolean, path, selectableValues))}
 		} else {
 			return []string{merge(m.explode("false", searchValue, m.theme.Boolean, path, selectableValues))}
 		}
 
-	case Number:
-		return []string{merge(m.explode(v.(Number).String(), searchValue, m.theme.Number, path, selectableValues))}
+	case fxJson.Number:
+		return []string{merge(m.explode(v.String(), searchValue, m.theme.Number, path, selectableValues))}
 
 	case string:
 		line := fmt.Sprintf("%q", v)
@@ -52,13 +52,13 @@ func (m *model) print(v interface{}, level, lineNumber, keyEndPos int, path stri
 		// No wrap
 		return []string{merge(chunks)}
 
-	case *Dict:
+	case *fxDict.Dict:
 		if !m.expandedPaths[path] {
 			return []string{m.preview(v, path, selectableValues)}
 		}
 		output := []string{m.printOpenBracket("{", highlight, path, selectableValues)}
 		lineNumber++ // bracket is on separate line
-		keys := v.(*Dict).Keys
+		keys := v.Keys
 		for i, k := range keys {
 			subpath := path + "." + k
 			highlight := m.highlightIndex[subpath]
@@ -71,7 +71,7 @@ func (m *model) print(v interface{}, level, lineNumber, keyEndPos int, path stri
 			key := fmt.Sprintf("%q", k)
 			keyTheme := m.theme.Key(i, len(keys))
 			key = merge(m.explode(key, keyRanges, keyTheme, subpath, true))
-			value, _ := v.(*Dict).Get(k)
+			value, _ := v.Get(k)
 			delim := merge(m.explode(": ", delimRanges, m.theme.Syntax, subpath, false))
 			keyEndPos := width(ident) + width(key) + width(delim)
 			lines := m.print(value, level+1, lineNumber, keyEndPos, subpath, false)
@@ -85,13 +85,13 @@ func (m *model) print(v interface{}, level, lineNumber, keyEndPos int, path stri
 		output = append(output, subident+m.printCloseBracket("}", highlight, path, false))
 		return output
 
-	case Array:
+	case fxJson.Array:
 		if !m.expandedPaths[path] {
 			return []string{m.preview(v, path, selectableValues)}
 		}
 		output := []string{m.printOpenBracket("[", highlight, path, selectableValues)}
 		lineNumber++ // bracket is on separate line
-		slice := v.(Array)
+		slice := v
 		for i, value := range slice {
 			subpath := fmt.Sprintf("%v[%v]", path, i)
 			s := m.highlightIndex[subpath]
@@ -120,28 +120,22 @@ func (m *model) preview(v interface{}, path string, selectableValues bool) strin
 	}
 	printValue := func(v interface{}) string {
 		switch v := v.(type) {
-		case nil, bool, Number:
+		case nil, bool, fxJson.Number:
 			return previewStyle(fmt.Sprintf("%v", v))
 		case string:
 			return previewStyle(fmt.Sprintf("%q", v))
-		case *Dict:
-			if m.showSize {
-				return previewStyle(toLowerNumber(fmt.Sprintf("{\u2026%v\u2026}", len(v.Keys))))
-			} else {
-				return previewStyle("{\u2026}")
-			}
-		case Array:
-			if m.showSize {
-				return previewStyle(toLowerNumber(fmt.Sprintf("[\u2026%v\u2026]", len(v))))
-			} else {
-				return previewStyle("[\u2026]")
-			}
+		case *fxDict.Dict:
+			return previewStyle(fmt.Sprintf("{ ...%v }", len(v.Keys)))
+
+		case fxJson.Array:
+			return previewStyle(fmt.Sprintf("[ ...%v ]", len(v)))
+
 		}
 		return "..."
 	}
 
 	switch v := v.(type) {
-	case *Dict:
+	case *fxDict.Dict:
 		output := m.printOpenBracket("{", searchResult, path, selectableValues)
 		keys := v.Keys
 		for _, k := range keys {
@@ -152,27 +146,19 @@ func (m *model) preview(v interface{}, path string, selectableValues bool) strin
 			break
 		}
 		if len(keys) > 1 {
-			if m.showSize {
-				output += previewStyle(toLowerNumber(fmt.Sprintf(", \u2026%v\u2026", len(v.Keys)-1)))
-			} else {
-				output += previewStyle(", \u2026")
-			}
+			output += previewStyle(fmt.Sprintf(", ...%v }", len(v.Keys)-1))
 		}
 		output += m.printCloseBracket("}", searchResult, path, selectableValues)
 		return output
 
-	case Array:
+	case fxJson.Array:
 		output := m.printOpenBracket("[", searchResult, path, selectableValues)
 		for _, value := range v {
 			output += printValue(value)
 			break
 		}
 		if len(v) > 1 {
-			if m.showSize {
-				output += previewStyle(toLowerNumber(fmt.Sprintf(", \u2026%v\u2026", len(v)-1)))
-			} else {
-				output += previewStyle(", \u2026")
-			}
+			output += previewStyle(fmt.Sprintf(", ...%v ", len(v)-1))
 		}
 		output += m.printCloseBracket("]", searchResult, path, selectableValues)
 		return output

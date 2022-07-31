@@ -51,7 +51,7 @@ func Test_search_array(t *testing.T) {
 	m := &model{
 		json: Array{"first", "second"},
 	}
-	re, _ := regexp.Compile("\\w+")
+	re, _ := regexp.Compile(`\w+`)
 	indexes := re.FindAllStringIndex(Stringify(m.json), -1)
 	m.remapSearchResult(m.json, "", 0, indexes, 0, nil)
 
@@ -86,7 +86,7 @@ func Test_search_between_array(t *testing.T) {
 	m := &model{
 		json: Array{"first", "second"},
 	}
-	re, _ := regexp.Compile("\\w.+\\w")
+	re, _ := regexp.Compile(`\w.+\w`)
 	indexes := re.FindAllStringIndex(Stringify(m.json), -1)
 	m.remapSearchResult(m.json, "", 0, indexes, 0, nil)
 

@@ -6,13 +6,12 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"runtime/pprof"
 	"strings"
 
-	. "github.com/antonmedv/fx/pkg/dict"
-	. "github.com/antonmedv/fx/pkg/json"
-	. "github.com/antonmedv/fx/pkg/reducer"
-	. "github.com/antonmedv/fx/pkg/theme"
+	fxDict "github.com/antonmedv/fx/pkg/dict"
+	fxJson "github.com/antonmedv/fx/pkg/json"
+	fxReducer "github.com/antonmedv/fx/pkg/reducer"
+	fxTheme "github.com/antonmedv/fx/pkg/theme"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,33 +49,9 @@ func main() {
 		fmt.Println(version)
 		return
 	}
-	cpuProfile := os.Getenv("CPU_PROFILE")
-	if cpuProfile != "" {
-		f, err := os.Create(cpuProfile)
-		if err != nil {
-			panic(err)
-		}
-		err = pprof.StartCPUProfile(f)
-		if err != nil {
-			panic(err)
-		}
-	}
-	themeId, ok := os.LookupEnv("FX_THEME")
-	if !ok {
-		themeId = "1"
-	}
-	theme, ok := Themes[themeId]
-	if !ok {
-		theme = Themes["1"]
-	}
+	theme := fxTheme.ColorTheme
 	if termenv.ColorProfile() == termenv.Ascii {
-		theme = Themes["0"]
-	}
-	var showSize bool
-	if s, ok := os.LookupEnv("FX_SHOW_SIZE"); ok {
-		if s == "true" {
-			showSize = true
-		}
+		theme = fxTheme.BWTheme
 	}
 
 	stdinIsTty := isatty.IsTerminal(os.Stdin.Fd())
@@ -110,58 +85,29 @@ func main() {
 		os.Exit(1)
 	}
 	dec.UseNumber()
-	object, err := Parse(dec)
+	object, err := fxJson.Parse(dec)
 	if err != nil {
 		fmt.Println("JSON Parse Error:", err.Error())
 		os.Exit(1)
 	}
-	lang, ok := os.LookupEnv("FX_LANG")
-	if !ok {
-		lang = "js"
-	}
 	var fxrc string
-	if lang == "js" || lang == "node" {
-		home, err := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err == nil {
+		b, err := os.ReadFile(path.Join(home, ".fxrc.js"))
 		if err == nil {
-			b, err := os.ReadFile(path.Join(home, ".fxrc.js"))
-			if err == nil {
-				fxrc = "\n" + string(b)
-				if lang == "js" {
-					parts := strings.SplitN(fxrc, "// nodejs:", 2)
-					fxrc = parts[0]
-				}
-			}
+			fxrc = "\n" + string(b)
 		}
 	}
 	if dec.More() {
-		os.Exit(stream(dec, object, lang, args, theme, fxrc))
+		os.Exit(stream(dec, object, args, theme, fxrc))
 	}
 	if len(args) > 0 || !stdoutIsTty {
-		if len(args) > 0 && flagPrintCode {
-			fmt.Print(GenerateCode(lang, args, fxrc))
-			return
-		}
-		if lang == "js" {
-			simplePath, ok := SplitSimplePath(args)
-			if ok {
-				output := GetBySimplePath(object, simplePath)
-				Echo(output, theme)
-				os.Exit(0)
-			}
-			vm, fn, err := CreateJS(args, fxrc)
-			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
-			}
-			os.Exit(ReduceJS(vm, fn, object, theme))
-		} else {
-			os.Exit(Reduce(object, lang, args, theme, fxrc))
-		}
+		os.Exit(fxReducer.Reduce(object, args, theme, fxrc))
 	}
 
 	// Start interactive mode.
 	expand := map[string]bool{"": true}
-	if array, ok := object.(Array); ok {
+	if array, ok := object.(fxJson.Array); ok {
 		for i := range array {
 			expand[accessor("", i)] = true
 		}
@@ -169,14 +115,14 @@ func main() {
 	parents := map[string]string{}
 	children := map[string][]string{}
 	canBeExpanded := map[string]bool{}
-	Dfs(object, func(it Iterator) {
+	fxJson.Dfs(object, func(it fxJson.Iterator) {
 		parents[it.Path] = it.Parent
 		children[it.Parent] = append(children[it.Parent], it.Path)
 		switch it.Object.(type) {
-		case *Dict:
-			canBeExpanded[it.Path] = len(it.Object.(*Dict).Keys) > 0
-		case Array:
-			canBeExpanded[it.Path] = len(it.Object.(Array)) > 0
+		case *fxDict.Dict:
+			canBeExpanded[it.Path] = len(it.Object.(*fxDict.Dict).Keys) > 0
+		case fxJson.Array:
+			canBeExpanded[it.Path] = len(it.Object.(fxJson.Array)) > 0
 		}
 	})
 	input := textinput.New()
@@ -185,7 +131,6 @@ func main() {
 		fileName:        fileName,
 		theme:           theme,
 		json:            object,
-		showSize:        showSize,
 		width:           80,
 		height:          60,
 		mouseWheelDelta: 3,
@@ -204,9 +149,6 @@ func main() {
 	if err := p.Start(); err != nil {
 		panic(err)
 	}
-	if cpuProfile != "" {
-		pprof.StopCPUProfile()
-	}
 	os.Exit(m.exitCode)
 }
 
@@ -214,10 +156,8 @@ type model struct {
 	exitCode      int
 	width, height int
 	windowHeight  int
-	footerHeight  int
 	wrap          bool
-	theme         Theme
-	showSize      bool // Show number of elements in preview
+	theme         fxTheme.Theme
 
 	fileName string
 	json     interface{}
@@ -413,9 +353,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.render()
 
 		case key.Matches(msg, m.keyMap.ExpandAll):
-			Dfs(m.json, func(it Iterator) {
+			fxJson.Dfs(m.json, func(it fxJson.Iterator) {
 				switch it.Object.(type) {
-				case *Dict, Array:
+				case *fxDict.Dict, fxJson.Array:
 					m.expandedPaths[it.Path] = true
 				}
 			})
@@ -580,23 +520,23 @@ func (m *model) collapseRecursively(path string) {
 }
 
 func (m *model) collectSiblings(v interface{}, path string) {
-	switch v.(type) {
-	case *Dict:
+	switch v := v.(type) {
+	case *fxDict.Dict:
 		prev := ""
-		for _, k := range v.(*Dict).Keys {
+		for _, k := range v.Keys {
 			subpath := path + "." + k
 			if prev != "" {
 				m.nextSiblings[prev] = subpath
 				m.prevSiblings[subpath] = prev
 			}
 			prev = subpath
-			value, _ := v.(*Dict).Get(k)
+			value, _ := v.Get(k)
 			m.collectSiblings(value, subpath)
 		}
 
-	case Array:
+	case fxJson.Array:
 		prev := ""
-		for i, value := range v.(Array) {
+		for i, value := range v {
 			subpath := fmt.Sprintf("%v[%v]", path, i)
 			if prev != "" {
 				m.nextSiblings[prev] = subpath

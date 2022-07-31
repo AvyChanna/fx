@@ -5,32 +5,18 @@ import (
 	"fmt"
 	"io"
 
-	. "github.com/antonmedv/fx/pkg/json"
-	. "github.com/antonmedv/fx/pkg/reducer"
-	. "github.com/antonmedv/fx/pkg/theme"
-	"github.com/dop251/goja"
+	fxJson "github.com/antonmedv/fx/pkg/json"
+	fxReducer "github.com/antonmedv/fx/pkg/reducer"
+	fxTheme "github.com/antonmedv/fx/pkg/theme"
 )
 
-func stream(dec *json.Decoder, object interface{}, lang string, args []string, theme Theme, fxrc string) int {
-	var vm *goja.Runtime
-	var fn goja.Callable
+func stream(dec *json.Decoder, object interface{}, args []string, theme fxTheme.Theme, fxrc string) int {
 	var err error
-	if lang == "js" {
-		vm, fn, err = CreateJS(args, fxrc)
-		if err != nil {
-			fmt.Println(err)
-			return 1
-		}
-	}
 	for {
 		if object != nil {
-			if lang == "js" {
-				ReduceJS(vm, fn, object, theme)
-			} else {
-				Reduce(object, lang, args, theme, fxrc)
-			}
+			fxReducer.Reduce(object, args, theme, fxrc)
 		}
-		object, err = Parse(dec)
+		object, err = fxJson.Parse(dec)
 		if err == io.EOF {
 			return 0
 		}

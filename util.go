@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -34,17 +33,4 @@ func width(s string) int {
 
 func accessor(path string, to interface{}) string {
 	return fmt.Sprintf("%v[%v]", path, to)
-}
-
-func toLowerNumber(s string) string {
-	var out strings.Builder
-	for _, r := range s {
-		switch {
-		case '0' <= r && r <= '9':
-			out.WriteRune('\u2080' + (r - '\u0030'))
-		default:
-			out.WriteRune(r)
-		}
-	}
-	return out.String()
 }

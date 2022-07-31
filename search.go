@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"regexp"
 
-	. "github.com/antonmedv/fx/pkg/dict"
-	. "github.com/antonmedv/fx/pkg/json"
+	fxDict "github.com/antonmedv/fx/pkg/dict"
+	fxJson "github.com/antonmedv/fx/pkg/json"
 )
 
 type searchResult struct {
@@ -57,7 +57,7 @@ func (m *model) doSearch(s string) {
 		m.searchInput.Blur()
 		return
 	}
-	indexes := re.FindAllStringIndex(Stringify(m.json), -1)
+	indexes := re.FindAllStringIndex(fxJson.Stringify(m.json), -1)
 	m.remapSearchResult(m.json, "", 0, indexes, 0, nil)
 	m.indexSearchResults()
 	m.searchInput.Blur()
@@ -66,7 +66,7 @@ func (m *model) doSearch(s string) {
 }
 
 func (m *model) remapSearchResult(object interface{}, path string, pos int, indexes [][]int, id int, current *searchResult) (int, int, *searchResult) {
-	switch object.(type) {
+	switch object := object.(type) {
 	case nil:
 		s := "null"
 		id, current = m.findRanges(valueRange, s, path, pos, indexes, id, current)
@@ -74,7 +74,7 @@ func (m *model) remapSearchResult(object interface{}, path string, pos int, inde
 
 	case bool:
 		var s string
-		if object.(bool) {
+		if object {
 			s = "true"
 		} else {
 			s = "false"
@@ -82,8 +82,8 @@ func (m *model) remapSearchResult(object interface{}, path string, pos int, inde
 		id, current = m.findRanges(valueRange, s, path, pos, indexes, id, current)
 		return pos + len(s), id, current
 
-	case Number:
-		s := object.(Number).String()
+	case fxJson.Number:
+		s := object.String()
 		id, current = m.findRanges(valueRange, s, path, pos, indexes, id, current)
 		return pos + len(s), id, current
 
@@ -93,10 +93,10 @@ func (m *model) remapSearchResult(object interface{}, path string, pos int, inde
 		id, current = m.findRanges(valueRange, s, path, pos, indexes, id, current)
 		return pos + len(s), id, current
 
-	case *Dict:
+	case *fxDict.Dict:
 		id, current = m.findRanges(openBracketRange, "{", path, pos, indexes, id, current)
 		pos++ // {
-		for i, k := range object.(*Dict).Keys {
+		for i, k := range object.Keys {
 			subpath := path + "." + k
 
 			key := fmt.Sprintf("%q", k)
@@ -107,8 +107,8 @@ func (m *model) remapSearchResult(object interface{}, path string, pos int, inde
 			id, current = m.findRanges(delimRange, delim, subpath, pos, indexes, id, current)
 			pos += len(delim)
 
-			pos, id, current = m.remapSearchResult(object.(*Dict).Values[k], subpath, pos, indexes, id, current)
-			if i < len(object.(*Dict).Keys)-1 {
+			pos, id, current = m.remapSearchResult(object.Values[k], subpath, pos, indexes, id, current)
+			if i < len(object.Keys)-1 {
 				comma := ","
 				id, current = m.findRanges(commaRange, comma, subpath, pos, indexes, id, current)
 				pos += len(comma)
@@ -118,13 +118,13 @@ func (m *model) remapSearchResult(object interface{}, path string, pos int, inde
 		pos++ // }
 		return pos, id, current
 
-	case Array:
+	case fxJson.Array:
 		id, current = m.findRanges(openBracketRange, "[", path, pos, indexes, id, current)
 		pos++ // [
-		for i, v := range object.(Array) {
+		for i, v := range object {
 			subpath := fmt.Sprintf("%v[%v]", path, i)
 			pos, id, current = m.remapSearchResult(v, subpath, pos, indexes, id, current)
-			if i < len(object.(Array))-1 {
+			if i < len(object)-1 {
 				comma := ","
 				id, current = m.findRanges(commaRange, comma, subpath, pos, indexes, id, current)
 				pos += len(comma)
@@ -239,11 +239,4 @@ func (m *model) prevSearchResult() {
 		i = len(m.searchResults) - 1
 	}
 	m.jumpToSearchResult(i)
-}
-
-func (m *model) resultsCursorPath() string {
-	if len(m.searchResults) == 0 {
-		return "?"
-	}
-	return m.searchResults[m.searchResultsCursor].path
 }
